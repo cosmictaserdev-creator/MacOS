@@ -110,13 +110,14 @@ internal sealed class SearchWindow : Window
         Grid.SetRow(content, 1);
         body.Children.Add(content);
 
-        root.Children.Add(Glass.Surface(body, 27, app.Settings.UseLiquidGlass, live: true));
+        var snapshot = LiveBackdrop.CaptureUncovered(new Rect(Left + 16, Top + 16, Width - 32, Height - 32));
+        root.Children.Add(Glass.Surface(body, 27, app.Settings.UseLiquidGlass, snapshot: snapshot));
         Content = root;
         Loaded += async (_, _) =>
         {
             FocusSearch();
             var pinned = _app.Settings.Pinned.Where(p => p.Kind == "app").ToList();
-            _apps = await Task.Run(() => FindApps(pinned));
+            _apps = pinned;
             ShowCategories();
             Filter();
             BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(170)));
@@ -127,6 +128,8 @@ internal sealed class SearchWindow : Window
                 new DoubleAnimation(1, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
             ((TranslateTransform)entrance.Children[1]).BeginAnimation(TranslateTransform.YProperty,
                 new DoubleAnimation(0, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
+            _apps = await Task.Run(() => FindApps(pinned));
+            if (IsVisible) Filter();
         };
         KeyDown += (_, e) => { if (e.Key == Key.Escape) Close(); };
     }

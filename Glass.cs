@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
+using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 
@@ -27,7 +28,8 @@ internal static class Glass
             new(Color.FromArgb(171, 255, 255, 255), 1)
         }, new Point(0, 0), new Point(1, 1));
 
-    public static Border Surface(UIElement content, double radius, bool enabled = true, bool live = false)
+    public static Border Surface(UIElement content, double radius, bool enabled = true,
+        bool live = false, BitmapSource? snapshot = null)
     {
         var backdrop = new Rectangle
         {
@@ -51,7 +53,7 @@ internal static class Glass
         };
 
         Window? owner = null;
-        var refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
+        var refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(850) };
         void Refresh()
         {
             if (backdrop.Visibility != Visibility.Visible || pane.ActualWidth < 2 || pane.ActualHeight < 2) return;
@@ -62,13 +64,12 @@ internal static class Glass
                 var point = pane.TranslatePoint(new Point(0, 0), owner);
                 var bounds = new Rect(owner.Left + point.X, owner.Top + point.Y,
                     pane.ActualWidth, pane.ActualHeight);
-                var source = live ? LiveBackdrop.TryCapture(owner, bounds) : null;
+                var source = snapshot ?? (live ? LiveBackdrop.TryCapture(owner, bounds) : null);
                 source ??= WallpaperBackdrop.Render(bounds);
                 backdrop.Fill = new ImageBrush(source) { Stretch = Stretch.Fill };
-                backdrop.Effect = new LiquidGlassEffect
-                {
-                    PixelSize = new Point(1 / pane.ActualWidth, 1 / pane.ActualHeight)
-                };
+                var effect = backdrop.Effect as LiquidGlassEffect ?? new LiquidGlassEffect();
+                effect.PixelSize = new Point(1 / pane.ActualWidth, 1 / pane.ActualHeight);
+                backdrop.Effect = effect;
             }
             catch (Exception)
             {

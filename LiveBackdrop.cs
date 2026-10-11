@@ -13,6 +13,20 @@ internal static class LiveBackdrop
     [DllImport("gdi32.dll")]
     private static extern bool DeleteObject(IntPtr handle);
 
+    // Capture while a popup is still hidden, avoiding recursive reflections.
+    public static BitmapSource? CaptureUncovered(Rect screenBounds)
+    {
+        var screen = System.Windows.Forms.Screen.PrimaryScreen?.Bounds;
+        if (screen == null) return null;
+        var scaleX = screen.Value.Width / SystemParameters.PrimaryScreenWidth;
+        var scaleY = screen.Value.Height / SystemParameters.PrimaryScreenHeight;
+        var x = (int)Math.Round(screenBounds.X * scaleX);
+        var y = (int)Math.Round(screenBounds.Y * scaleY);
+        var width = (int)Math.Ceiling(screenBounds.Width * scaleX);
+        var height = (int)Math.Ceiling(screenBounds.Height * scaleY);
+        return Capture(x, y, width, height, screen.Value);
+    }
+
     public static BitmapSource? TryCapture(Window owner, Rect screenBounds)
     {
         if (Environment.OSVersion.Version.Build < 19041) return null;
@@ -25,21 +39,29 @@ internal static class LiveBackdrop
         var width = (int)Math.Ceiling(screenBounds.Width * transform.M11);
         var height = (int)Math.Ceiling(screenBounds.Height * transform.M22);
         var screen = System.Windows.Forms.Screen.PrimaryScreen?.Bounds;
-        if (screen == null || width < 2 || height < 2 || x < screen.Value.Left || y < screen.Value.Top ||
-            x + width > screen.Value.Right || y + height > screen.Value.Bottom)
-            return null;
+        if (screen == null) return null;
 
         // The window is excluded only during this capture. The shader does all blur and refraction.
         if (!SetWindowDisplayAffinity(handle, 0x11)) return null;
         try
         {
+            return Capture(x, y, width, height, screen.Value);
+        }
+        finally { SetWindowDisplayAffinity(handle, 0); }
+    }
+
+    private static BitmapSource? Capture(int x, int y, int width, int height, System.Drawing.Rectangle screen)
+    {
+        if (width < 2 || height < 2 || x < screen.Left || y < screen.Top ||
+            x + width > screen.Right || y + height > screen.Bottom)
+            return null;
+        try
+        {
             using var bitmap = new System.Drawing.Bitmap(width, height);
             using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
                 graphics.CopyFromScreen(x, y, 0, 0, new System.Drawing.Size(width, height));
-
             var center = bitmap.GetPixel(width / 2, height / 2);
             if (center.R < 3 && center.G < 3 && center.B < 3) return null;
-
             var hbitmap = bitmap.GetHbitmap();
             try
             {
@@ -51,6 +73,5 @@ internal static class LiveBackdrop
             finally { DeleteObject(hbitmap); }
         }
         catch (Exception) { return null; }
-        finally { SetWindowDisplayAffinity(handle, 0); }
     }
 }

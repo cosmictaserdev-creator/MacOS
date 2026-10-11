@@ -53,7 +53,8 @@ internal sealed class ControlCenterWindow : Window
         row.Children.Add(Ui.Button("Task view", () => { Close(); Windows.ShowTaskView(); }));
         body.Children.Add(row);
 
-        var glass = Glass.Surface(body, 24, app.Settings.UseLiquidGlass, live: true);
+        var snapshot = LiveBackdrop.CaptureUncovered(new Rect(Left + 12, Top + 12, Width - 24, Height - 24));
+        var glass = Glass.Surface(body, 24, app.Settings.UseLiquidGlass, snapshot: snapshot);
         glass.RenderTransformOrigin = new Point(0.85, 0);
         var entrance = new TransformGroup();
         entrance.Children.Add(new ScaleTransform(0.96, 0.96));
