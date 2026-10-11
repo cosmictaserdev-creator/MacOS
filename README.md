@@ -1,8 +1,8 @@
 # MacOSDock
 
-A Windows desktop shell inspired by macOS Tahoe and the user's MyDockFinder layout. It has a side or bottom dock, a transparent Finder style menu bar, running app indicators, app pinning, drag and drop shortcuts, a full Launchpad, Control Center, and a tray menu. This is a new implementation; it does not bundle MyDockFinder executables or assets.
+A Windows desktop shell inspired by macOS Tahoe and the user's MyDockFinder layout. It has a side or bottom dock, a transparent Finder style menu bar, running app indicators, app pinning, drag and drop shortcuts, a floating Apps browser, Control Center, and a tray menu. This is a new implementation; it does not bundle MyDockFinder executables or assets.
 
-The Liquid Glass surfaces use a custom HLSL pixel shader in [`Shaders/LiquidGlass.hlsl`](Shaders/LiquidGlass.hlsl). It samples the desktop wallpaper behind each surface, blurs and bends the image at the edges, offsets color channels, and adds a highlight. The compiled shader is embedded in the executable, so users need no shader compiler or Windows acrylic API.
+The Liquid Glass surfaces use a custom HLSL pixel shader in [`Shaders/LiquidGlass.hlsl`](Shaders/LiquidGlass.hlsl). It samples the screen behind the dock and popups when Windows permits capture, and falls back to the desktop wallpaper. The shader blurs and bends the image at the edges, offsets color channels, and adds a highlight. The compiled shader is embedded in the executable, so users need no shader compiler or Windows acrylic API.
 
 ## Download and run
 
@@ -13,7 +13,7 @@ Open [Actions](https://github.com/cosmictaserdev-creator/MacOS/actions/workflows
 - Click a dock icon to launch its app or bring its window forward.
 - Drag a file, folder, or shortcut onto the dock, or use **Add app** in the dock menu.
 - Right click a dock icon to pin or remove it, or open its file location.
-- The Launchpad icon opens a searchable grid of installed Start Menu apps.
+- The Apps icon opens a searchable floating browser of installed Start Menu apps, with categories and grid or list views.
 - The menu bar opens Control Center, search, and the running window list.
 - Settings offers dock position, icon size, running apps, automatic hiding, and optional Windows taskbar hiding.
 - **Import MyDockFinder layout** reads `ico.ini` and icon paths from a folder you choose. On a new install, `E:\MyDockFinder` is imported automatically when present. No personal paths or images are uploaded to this repository.

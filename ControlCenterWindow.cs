@@ -1,6 +1,7 @@
 using System.Net.NetworkInformation;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -51,7 +52,7 @@ internal sealed class ControlCenterWindow : Window
         row.Children.Add(Ui.Button("Task view", () => { Close(); Windows.ShowTaskView(); }));
         body.Children.Add(row);
 
-        var glass = Glass.Surface(body, 24, app.Settings.UseLiquidGlass);
+        var glass = Glass.Surface(body, 24, app.Settings.UseLiquidGlass, live: true);
         Content = new Border { Child = glass, Padding = new Thickness(12) };
         Deactivated += (_, _) => Close();
         Loaded += (_, _) => BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(150)));

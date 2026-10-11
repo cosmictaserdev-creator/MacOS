@@ -34,7 +34,7 @@ internal sealed class DockWindow : Window
         AllowDrop = true;
 
         _scroll = new ScrollViewer { Content = _icons };
-        _surface = Glass.Surface(_scroll, 23, app.Settings.UseLiquidGlass);
+        _surface = Glass.Surface(_scroll, 23, app.Settings.UseLiquidGlass, live: true);
         _surface.Padding = new Thickness(7);
         Content = new Border { Child = _surface, Padding = new Thickness(16) };
 
@@ -93,7 +93,7 @@ internal sealed class DockWindow : Window
         }
 
         _icons.Children.Add(CreateDivider());
-        _icons.Children.Add(CreateAction("▦", "Launchpad", _app.ShowSearch));
+        _icons.Children.Add(CreateAction("▦", "Apps", _app.ShowSearch));
         var trashIcon = _app.Settings.SourceFolder == null ? null :
             Path.Combine(_app.Settings.SourceFolder, "themes", "mac os", "icons", "Trash_Empty.png");
         _icons.Children.Add(CreateAction("♜", "Trash", () => _app.Launch("shell:RecycleBinFolder"), trashIcon));
@@ -270,7 +270,7 @@ internal sealed class DockWindow : Window
     {
         var menu = new ContextMenu();
         Add(menu, "Add app…", _app.AddAppFromDialog);
-        Add(menu, "Launchpad", _app.ShowSearch);
+        Add(menu, "Apps", _app.ShowSearch);
         Add(menu, "Settings…", _app.ShowSettings);
         Add(menu, "Exit", _app.Shutdown);
         return menu;

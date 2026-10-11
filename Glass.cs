@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Shapes;
+using System.Windows.Threading;
 
 namespace MacOSDock;
 
@@ -26,7 +27,7 @@ internal static class Glass
             new(Color.FromArgb(125, 255, 255, 255), 1)
         }, new Point(0, 0), new Point(1, 1));
 
-    public static Border Surface(UIElement content, double radius, bool enabled = true)
+    public static Border Surface(UIElement content, double radius, bool enabled = true, bool live = false)
     {
         var backdrop = new Rectangle
         {
@@ -50,6 +51,7 @@ internal static class Glass
         };
 
         Window? owner = null;
+        var refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
         void Refresh()
         {
             if (backdrop.Visibility != Visibility.Visible || pane.ActualWidth < 2 || pane.ActualHeight < 2) return;
@@ -60,7 +62,8 @@ internal static class Glass
                 var point = pane.TranslatePoint(new Point(0, 0), owner);
                 var bounds = new Rect(owner.Left + point.X, owner.Top + point.Y,
                     pane.ActualWidth, pane.ActualHeight);
-                var source = WallpaperBackdrop.Render(bounds);
+                var source = live ? LiveBackdrop.TryCapture(owner, bounds) : null;
+                source ??= WallpaperBackdrop.Render(bounds);
                 backdrop.Fill = new ImageBrush(source) { Stretch = Stretch.Fill };
                 backdrop.Effect = new LiquidGlassEffect
                 {
@@ -79,7 +82,10 @@ internal static class Glass
             owner = Window.GetWindow(pane);
             if (owner != null) owner.LocationChanged += (_, _) => Refresh();
             Refresh();
+            if (live) refreshTimer.Start();
         };
+        refreshTimer.Tick += (_, _) => { if (owner?.IsVisible == true) Refresh(); };
+        pane.Unloaded += (_, _) => refreshTimer.Stop();
         pane.SizeChanged += (_, _) => Refresh();
         return pane;
     }
