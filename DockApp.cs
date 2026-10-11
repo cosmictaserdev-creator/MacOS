@@ -67,7 +67,7 @@ internal sealed class DockApp : Application
 
     public void RefreshWindows()
     {
-        Running = Windows.GetRunningWindows();
+        Running = MacOSDock.Windows.GetRunningWindows();
         _dock?.RefreshItems();
         _bar?.RefreshActiveApp();
     }
