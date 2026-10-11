@@ -35,7 +35,11 @@ internal sealed class SearchWindow : Window
         Left = SystemParameters.WorkArea.Left + (SystemParameters.WorkArea.Width - Width) / 2;
         Top = SystemParameters.WorkArea.Top + 58;
 
-        var root = new Grid { Margin = new Thickness(16) };
+        var root = new Grid { Margin = new Thickness(16), RenderTransformOrigin = new Point(0.5, 0.5) };
+        var entrance = new TransformGroup();
+        entrance.Children.Add(new ScaleTransform(0.96, 0.96));
+        entrance.Children.Add(new TranslateTransform(0, 14));
+        root.RenderTransform = entrance;
         var body = new Grid { Margin = new Thickness(20) };
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -116,6 +120,13 @@ internal sealed class SearchWindow : Window
             ShowCategories();
             Filter();
             BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(170)));
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            ((ScaleTransform)entrance.Children[0]).BeginAnimation(ScaleTransform.ScaleXProperty,
+                new DoubleAnimation(1, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
+            ((ScaleTransform)entrance.Children[0]).BeginAnimation(ScaleTransform.ScaleYProperty,
+                new DoubleAnimation(1, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
+            ((TranslateTransform)entrance.Children[1]).BeginAnimation(TranslateTransform.YProperty,
+                new DoubleAnimation(0, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
         };
         KeyDown += (_, e) => { if (e.Key == Key.Escape) Close(); };
     }

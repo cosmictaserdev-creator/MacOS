@@ -70,7 +70,10 @@ internal sealed class MenuBarWindow : Window
         DockPanel.SetDock(right, Dock.Right);
         bar.Children.Add(right);
 
-        Content = bar;
+        var glass = Glass.Surface(bar, 0, app.Settings.UseLiquidGlass, live: true);
+        glass.BorderThickness = new Thickness(0);
+        glass.Effect = null;
+        Content = glass;
         UpdateStatus();
         _timer.Tick += (_, _) => UpdateStatus();
         _timer.Start();

@@ -12,19 +12,19 @@ internal static class Glass
     private static readonly Brush ClearTint = new LinearGradientBrush(
         new GradientStopCollection
         {
-            new(Color.FromArgb(70, 245, 249, 255), 0),
-            new(Color.FromArgb(45, 160, 177, 206), 0.35),
-            new(Color.FromArgb(68, 31, 41, 61), 1)
+            new(Color.FromArgb(96, 248, 252, 255), 0),
+            new(Color.FromArgb(34, 191, 212, 242), 0.28),
+            new(Color.FromArgb(62, 21, 34, 55), 1)
         }, new Point(0, 0), new Point(1, 1));
 
     private static readonly Brush DarkTint = new SolidColorBrush(Color.FromArgb(230, 24, 28, 40));
     private static readonly Brush Rim = new LinearGradientBrush(
         new GradientStopCollection
         {
-            new(Color.FromArgb(204, 255, 255, 255), 0),
-            new(Color.FromArgb(98, 255, 255, 255), 0.43),
-            new(Color.FromArgb(35, 240, 248, 255), 0.75),
-            new(Color.FromArgb(125, 255, 255, 255), 1)
+            new(Color.FromArgb(233, 255, 255, 255), 0),
+            new(Color.FromArgb(115, 246, 252, 255), 0.37),
+            new(Color.FromArgb(38, 227, 241, 255), 0.68),
+            new(Color.FromArgb(171, 255, 255, 255), 1)
         }, new Point(0, 0), new Point(1, 1));
 
     public static Border Surface(UIElement content, double radius, bool enabled = true, bool live = false)
@@ -47,7 +47,7 @@ internal static class Glass
             BorderBrush = enabled ? Rim : new SolidColorBrush(Color.FromArgb(70, 255, 255, 255)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(radius),
-            Effect = new DropShadowEffect { BlurRadius = 28, ShadowDepth = 9, Opacity = 0.4, Color = Colors.Black }
+            Effect = new DropShadowEffect { BlurRadius = 22, ShadowDepth = 7, Opacity = 0.31, Color = Colors.Black }
         };
 
         Window? owner = null;
@@ -80,7 +80,7 @@ internal static class Glass
         pane.Loaded += (_, _) =>
         {
             owner = Window.GetWindow(pane);
-            if (owner != null) owner.LocationChanged += (_, _) => Refresh();
+            if (owner != null && !live) owner.LocationChanged += (_, _) => Refresh();
             Refresh();
             if (live) refreshTimer.Start();
         };

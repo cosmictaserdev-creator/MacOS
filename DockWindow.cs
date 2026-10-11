@@ -18,6 +18,7 @@ internal sealed class DockWindow : Window
     private readonly List<Border> _iconViews = [];
     private readonly DispatcherTimer _hideTimer = new() { Interval = TimeSpan.FromMilliseconds(650) };
     private bool _concealed;
+    private bool _positioned;
     private bool IsVertical => _app.Settings.DockPosition != "bottom";
 
     public DockWindow(DockApp app)
@@ -152,6 +153,7 @@ internal sealed class DockWindow : Window
         var holder = WrapIcon(center, running?.Title ?? name);
         holder.MouseLeftButtonUp += (_, _) =>
         {
+            Bounce(holder);
             if (running != null) Windows.Activate(running.Handle);
             else if (target != null) _app.Launch(target);
         };
@@ -177,7 +179,7 @@ internal sealed class DockWindow : Window
         var center = new Grid { Width = size, Height = size };
         center.Children.Add(visual);
         var holder = WrapIcon(center, label);
-        holder.MouseLeftButtonUp += (_, _) => action();
+        holder.MouseLeftButtonUp += (_, _) => { Bounce(holder); action(); };
         return holder;
     }
 
@@ -196,7 +198,10 @@ internal sealed class DockWindow : Window
             RenderTransformOrigin = vertical
                 ? new Point(_app.Settings.DockPosition == "right" ? 1 : 0, 0.5)
                 : new Point(0.5, 1),
-            RenderTransform = new ScaleTransform(1, 1)
+            RenderTransform = new TransformGroup
+            {
+                Children = new TransformCollection { new ScaleTransform(1, 1), new TranslateTransform() }
+            }
         };
         _iconViews.Add(holder);
         return holder;
@@ -236,13 +241,28 @@ internal sealed class DockWindow : Window
 
     private static void Animate(FrameworkElement element, double scale)
     {
-        var transform = (ScaleTransform)element.RenderTransform;
+        var transform = (ScaleTransform)((TransformGroup)element.RenderTransform).Children[0];
         var animation = new DoubleAnimation(scale, TimeSpan.FromMilliseconds(120))
         {
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
         };
         transform.BeginAnimation(ScaleTransform.ScaleXProperty, animation);
         transform.BeginAnimation(ScaleTransform.ScaleYProperty, animation);
+    }
+
+    private void Bounce(FrameworkElement element)
+    {
+        var transform = (TranslateTransform)((TransformGroup)element.RenderTransform).Children[1];
+        var motion = new DoubleAnimationUsingKeyFrames();
+        motion.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+        motion.KeyFrames.Add(new EasingDoubleKeyFrame(IsVertical
+            ? (_app.Settings.DockPosition == "right" ? -14 : 14) : -14,
+            KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(120)),
+            new CubicEase { EasingMode = EasingMode.EaseOut }));
+        motion.KeyFrames.Add(new EasingDoubleKeyFrame(0,
+            KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(390)),
+            new BounceEase { Bounces = 1, Bounciness = 2.5, EasingMode = EasingMode.EaseOut }));
+        transform.BeginAnimation(IsVertical ? TranslateTransform.XProperty : TranslateTransform.YProperty, motion);
     }
 
     private ContextMenu CreateItemMenu(PinnedApp? pin, RunningWindow? running, string? target)
@@ -305,20 +325,40 @@ internal sealed class DockWindow : Window
     {
         if (!IsLoaded) return;
         var work = SystemParameters.WorkArea;
+        double left;
+        double top;
         switch (_app.Settings.DockPosition)
         {
             case "left":
-                Left = _concealed ? work.Left - ActualWidth + 9 : work.Left + 4;
-                Top = work.Top + (work.Height - ActualHeight) / 2;
+                left = _concealed ? work.Left - ActualWidth + 9 : work.Left + 4;
+                top = work.Top + (work.Height - ActualHeight) / 2;
                 break;
             case "right":
-                Left = _concealed ? work.Right - 9 : work.Right - ActualWidth - 4;
-                Top = work.Top + (work.Height - ActualHeight) / 2;
+                left = _concealed ? work.Right - 9 : work.Right - ActualWidth - 4;
+                top = work.Top + (work.Height - ActualHeight) / 2;
                 break;
             default:
-                Left = work.Left + (work.Width - ActualWidth) / 2;
-                Top = _concealed ? work.Bottom - 9 : work.Bottom - ActualHeight - 4;
+                left = work.Left + (work.Width - ActualWidth) / 2;
+                top = _concealed ? work.Bottom - 9 : work.Bottom - ActualHeight - 4;
                 break;
         }
+        MoveTo(LeftProperty, left);
+        MoveTo(TopProperty, top);
+        _positioned = true;
+    }
+
+    private void MoveTo(DependencyProperty property, double target)
+    {
+        var current = (double)GetValue(property);
+        if (Math.Abs(current - target) < 0.5) return;
+        if (!_positioned)
+        {
+            SetValue(property, target);
+            return;
+        }
+        BeginAnimation(property, new DoubleAnimation(target, TimeSpan.FromMilliseconds(260))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        });
     }
 }

@@ -37,6 +37,7 @@ internal sealed class DockApp : Application
         _bar = new MenuBarWindow(this);
         CreateTray();
         RefreshWindows();
+        _dock.RefreshItems();
         _refresh.Tick += (_, _) => RefreshWindows();
         _refresh.Start();
         ApplyVisibility();
@@ -68,8 +69,11 @@ internal sealed class DockApp : Application
 
     public void RefreshWindows()
     {
-        Running = MacOSDock.Windows.GetRunningWindows();
-        _dock?.RefreshItems();
+        var current = MacOSDock.Windows.GetRunningWindows();
+        var changed = current.Count != Running.Count ||
+            current.Where((window, index) => index >= Running.Count || window.Handle != Running[index].Handle).Any();
+        Running = current;
+        if (changed) _dock?.RefreshItems();
         _bar?.RefreshActiveApp();
     }
 

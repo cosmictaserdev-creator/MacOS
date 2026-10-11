@@ -12,6 +12,7 @@ namespace MacOSDock;
 internal sealed class ControlCenterWindow : Window
 {
     private readonly DockApp _app;
+    private bool _closed;
 
     public ControlCenterWindow(DockApp app)
     {
@@ -53,9 +54,30 @@ internal sealed class ControlCenterWindow : Window
         body.Children.Add(row);
 
         var glass = Glass.Surface(body, 24, app.Settings.UseLiquidGlass, live: true);
+        glass.RenderTransformOrigin = new Point(0.85, 0);
+        var entrance = new TransformGroup();
+        entrance.Children.Add(new ScaleTransform(0.96, 0.96));
+        entrance.Children.Add(new TranslateTransform(0, -12));
+        glass.RenderTransform = entrance;
         Content = new Border { Child = glass, Padding = new Thickness(12) };
-        Deactivated += (_, _) => Close();
-        Loaded += (_, _) => BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(150)));
+        // Activation can change while Close is already running. Defer dismissal
+        // until the current window message has completed.
+        Deactivated += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!_closed && IsVisible) Close();
+        }));
+        Closed += (_, _) => _closed = true;
+        Loaded += (_, _) =>
+        {
+            BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(170)));
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            ((ScaleTransform)entrance.Children[0]).BeginAnimation(ScaleTransform.ScaleXProperty,
+                new DoubleAnimation(1, TimeSpan.FromMilliseconds(240)) { EasingFunction = ease });
+            ((ScaleTransform)entrance.Children[0]).BeginAnimation(ScaleTransform.ScaleYProperty,
+                new DoubleAnimation(1, TimeSpan.FromMilliseconds(240)) { EasingFunction = ease });
+            ((TranslateTransform)entrance.Children[1]).BeginAnimation(TranslateTransform.YProperty,
+                new DoubleAnimation(0, TimeSpan.FromMilliseconds(240)) { EasingFunction = ease });
+        };
         KeyDown += (_, e) => { if (e.Key == Key.Escape) Close(); };
     }
 
