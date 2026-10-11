@@ -5,15 +5,20 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using System.Windows.Media.Effects;
-using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 
 namespace MacOSDock;
 
 internal sealed class DockWindow : Window
 {
     private readonly DockApp _app;
-    private readonly StackPanel _icons = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+    private readonly StackPanel _icons = new() { VerticalAlignment = VerticalAlignment.Center };
+    private readonly ScrollViewer _scroll;
+    private readonly Border _surface;
+    private readonly List<Border> _iconViews = [];
+    private readonly DispatcherTimer _hideTimer = new() { Interval = TimeSpan.FromMilliseconds(650) };
+    private bool _concealed;
+    private bool IsVertical => _app.Settings.DockPosition != "bottom";
 
     public DockWindow(DockApp app)
     {
@@ -28,108 +33,123 @@ internal sealed class DockWindow : Window
         WindowStartupLocation = WindowStartupLocation.Manual;
         AllowDrop = true;
 
-        var scroll = new ScrollViewer
-        {
-            Content = _icons,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            MaxWidth = Math.Max(420, SystemParameters.PrimaryScreenWidth - 40)
-        };
-        var content = Ui.Card(scroll, 21);
-        content.Padding = new Thickness(8, 7, 8, 6);
-        content.Effect = new DropShadowEffect { BlurRadius = 30, ShadowDepth = 9, Opacity = 0.42, Color = Colors.Black };
-        Content = new Border { Child = content, Padding = new Thickness(16, 7, 16, 18) };
+        _scroll = new ScrollViewer { Content = _icons };
+        _surface = Glass.Surface(_scroll, 23, app.Settings.UseLiquidGlass);
+        _surface.Padding = new Thickness(7);
+        Content = new Border { Child = _surface, Padding = new Thickness(16) };
 
         Loaded += (_, _) => Reposition();
         SizeChanged += (_, _) => Reposition();
         DragOver += OnDragOver;
         Drop += OnDrop;
         ContextMenu = CreateDockMenu();
+        _icons.MouseMove += OnIconMouseMove;
+        _icons.MouseLeave += (_, _) => ResetMagnification();
+        MouseEnter += (_, _) => { _hideTimer.Stop(); _concealed = false; Reposition(); };
+        MouseLeave += (_, _) => { if (_app.Settings.AutoHideDock) _hideTimer.Start(); };
+        _hideTimer.Tick += (_, _) =>
+        {
+            _hideTimer.Stop();
+            if (_app.Settings.AutoHideDock && !IsMouseOver) { _concealed = true; Reposition(); }
+        };
     }
 
     public void RefreshItems()
     {
+        var vertical = IsVertical;
+        _icons.Orientation = vertical ? Orientation.Vertical : Orientation.Horizontal;
+        _scroll.VerticalScrollBarVisibility = vertical ? ScrollBarVisibility.Hidden : ScrollBarVisibility.Disabled;
+        _scroll.HorizontalScrollBarVisibility = vertical ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Hidden;
+        _scroll.MaxHeight = vertical ? Math.Max(350, SystemParameters.PrimaryScreenHeight - 90) : double.PositiveInfinity;
+        _scroll.MaxWidth = vertical ? double.PositiveInfinity : Math.Max(420, SystemParameters.PrimaryScreenWidth - 40);
+        Glass.SetEnabled(_surface, _app.Settings.UseLiquidGlass);
+        if (!_app.Settings.AutoHideDock) _concealed = false;
         _icons.Children.Clear();
+        _iconViews.Clear();
+
         var shown = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var pin in _app.Settings.Pinned)
         {
+            if (pin.Kind == "separator")
+            {
+                _icons.Children.Add(CreateDivider());
+                continue;
+            }
             var running = _app.Running.FirstOrDefault(w => Matches(pin, w));
-            _icons.Children.Add(CreateIcon(pin.Name, pin.Target, pin.Glyph, pin, running));
+            _icons.Children.Add(CreateIcon(pin.Name, pin.Target, pin.Glyph, pin.IconPath, pin.RealPath, pin, running));
             if (running != null) shown.Add(running.ProcessName);
         }
 
-        var unpinned = _app.Running
-            .Where(w => !shown.Contains(w.ProcessName))
-            .GroupBy(w => w.ProcessName, StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.First())
-            .Take(14);
-        foreach (var window in unpinned)
-            _icons.Children.Add(CreateIcon(window.ProcessName, window.ExecutablePath, "◈", null, window));
-
-        var divider = new Border
+        if (_app.Settings.ShowRunningApps)
         {
-            Width = 1,
-            Height = _app.Settings.IconSize * 0.7,
-            Background = new SolidColorBrush(Color.FromArgb(90, 255, 255, 255)),
-            Margin = new Thickness(7, 0, 7, 0),
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        _icons.Children.Add(divider);
-        _icons.Children.Add(CreateAction("＋", "Add app", _app.AddAppFromDialog));
-        _icons.Children.Add(CreateAction("⌕", "Search", _app.ShowSearch));
-        Dispatcher.BeginInvoke(Reposition, System.Windows.Threading.DispatcherPriority.Loaded);
+            var unpinned = _app.Running
+                .Where(w => !shown.Contains(w.ProcessName))
+                .GroupBy(w => w.ProcessName, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .Take(14);
+            foreach (var window in unpinned)
+                _icons.Children.Add(CreateIcon(window.ProcessName, window.ExecutablePath, "◈", null,
+                    window.ExecutablePath, null, window));
+        }
+
+        _icons.Children.Add(CreateDivider());
+        _icons.Children.Add(CreateAction("▦", "Launchpad", _app.ShowSearch));
+        var trashIcon = _app.Settings.SourceFolder == null ? null :
+            Path.Combine(_app.Settings.SourceFolder, "themes", "mac os", "icons", "Trash_Empty.png");
+        _icons.Children.Add(CreateAction("♜", "Trash", () => _app.Launch("shell:RecycleBinFolder"), trashIcon));
+        Dispatcher.BeginInvoke(new Action(Reposition), System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     private static bool Matches(PinnedApp pin, RunningWindow window)
     {
-        if (window.ExecutablePath != null && string.Equals(pin.Target, window.ExecutablePath, StringComparison.OrdinalIgnoreCase))
+        if (window.ExecutablePath != null &&
+            (string.Equals(pin.Target, window.ExecutablePath, StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(pin.RealPath, window.ExecutablePath, StringComparison.OrdinalIgnoreCase)))
             return true;
-        return string.Equals(Path.GetFileNameWithoutExtension(pin.Target), window.ProcessName, StringComparison.OrdinalIgnoreCase);
+        return string.Equals(Path.GetFileNameWithoutExtension(pin.RealPath ?? pin.Target),
+            window.ProcessName, StringComparison.OrdinalIgnoreCase);
     }
 
-    private Border CreateIcon(string name, string? target, string glyph, PinnedApp? pin, RunningWindow? running)
+    private Border CreateIcon(string name, string? target, string glyph, string? iconPath,
+        string? realPath, PinnedApp? pin, RunningWindow? running)
     {
         var size = _app.Settings.IconSize;
-        var image = LoadIcon(target);
+        var icon = IconService.Load(iconPath) ?? IconService.Load(realPath) ?? IconService.Load(target);
         FrameworkElement visual;
-        if (image != null)
-        {
-            visual = new Image { Source = image, Width = size - 6, Height = size - 6, Stretch = Stretch.Uniform };
-        }
+        if (icon != null)
+            visual = new Image { Source = icon, Width = size, Height = size, Stretch = Stretch.Uniform };
         else
-        {
-            visual = Ui.Text(glyph, size * 0.61);
-            visual.HorizontalAlignment = HorizontalAlignment.Center;
-        }
+            visual = new TextBlock
+            {
+                Text = glyph,
+                FontFamily = new FontFamily("Segoe UI Symbol"),
+                FontSize = size * 0.64,
+                Foreground = Brushes.White,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
 
         var center = new Grid { Width = size, Height = size };
         center.Children.Add(visual);
-        var indicator = new Border
+        if (running != null)
         {
-            Width = running == null ? 0 : 5,
-            Height = 5,
-            CornerRadius = new CornerRadius(3),
-            Background = Brushes.White,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Bottom,
-            Margin = new Thickness(0, 0, 0, -8)
-        };
-        center.Children.Add(indicator);
+            center.Children.Add(new Border
+            {
+                Width = 5,
+                Height = 5,
+                CornerRadius = new CornerRadius(3),
+                Background = Brushes.White,
+                HorizontalAlignment = IsVertical
+                    ? (_app.Settings.DockPosition == "right" ? HorizontalAlignment.Right : HorizontalAlignment.Left)
+                    : HorizontalAlignment.Center,
+                VerticalAlignment = IsVertical ? VerticalAlignment.Center : VerticalAlignment.Bottom,
+                Margin = IsVertical
+                    ? (_app.Settings.DockPosition == "right" ? new Thickness(0, 0, -8, 0) : new Thickness(-8, 0, 0, 0))
+                    : new Thickness(0, 0, 0, -8)
+            });
+        }
 
-        var holder = new Border
-        {
-            Child = center,
-            Background = Brushes.Transparent,
-            CornerRadius = new CornerRadius(13),
-            Padding = new Thickness(4, 2, 4, 10),
-            Margin = new Thickness(1, 0, 1, 0),
-            ToolTip = running?.Title ?? name,
-            Cursor = Cursors.Hand,
-            RenderTransformOrigin = new Point(0.5, 1),
-            RenderTransform = new ScaleTransform(1, 1)
-        };
-        holder.MouseEnter += (_, _) => Animate(holder, 1.22);
-        holder.MouseLeave += (_, _) => Animate(holder, 1);
+        var holder = WrapIcon(center, running?.Title ?? name);
         holder.MouseLeftButtonUp += (_, _) =>
         {
             if (running != null) Windows.Activate(running.Handle);
@@ -139,32 +159,85 @@ internal sealed class DockWindow : Window
         return holder;
     }
 
-    private Border CreateAction(string glyph, string label, Action action)
+    private Border CreateAction(string glyph, string label, Action action, string? iconPath = null)
     {
         var size = _app.Settings.IconSize;
-        var text = Ui.Text(glyph, size * 0.64);
-        text.HorizontalAlignment = HorizontalAlignment.Center;
-        var button = new Border
+        var icon = IconService.Load(iconPath);
+        FrameworkElement visual = icon == null
+            ? new TextBlock
+            {
+                Text = glyph,
+                FontFamily = new FontFamily("Segoe UI Symbol"),
+                FontSize = size * 0.63,
+                Foreground = Brushes.White,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            }
+            : new Image { Source = icon, Width = size, Height = size };
+        var center = new Grid { Width = size, Height = size };
+        center.Children.Add(visual);
+        var holder = WrapIcon(center, label);
+        holder.MouseLeftButtonUp += (_, _) => action();
+        return holder;
+    }
+
+    private Border WrapIcon(UIElement content, string tooltip)
+    {
+        var vertical = IsVertical;
+        var holder = new Border
         {
-            Child = text,
-            Width = size + 7,
-            Height = size + 12,
+            Child = content,
             Background = Brushes.Transparent,
-            ToolTip = label,
+            CornerRadius = new CornerRadius(14),
+            Padding = vertical ? new Thickness(4, 3, 4, 3) : new Thickness(4, 3, 4, 10),
+            Margin = new Thickness(1),
+            ToolTip = tooltip,
             Cursor = Cursors.Hand,
-            RenderTransformOrigin = new Point(0.5, 1),
+            RenderTransformOrigin = vertical
+                ? new Point(_app.Settings.DockPosition == "right" ? 1 : 0, 0.5)
+                : new Point(0.5, 1),
             RenderTransform = new ScaleTransform(1, 1)
         };
-        button.MouseEnter += (_, _) => Animate(button, 1.18);
-        button.MouseLeave += (_, _) => Animate(button, 1);
-        button.MouseLeftButtonUp += (_, _) => action();
-        return button;
+        _iconViews.Add(holder);
+        return holder;
+    }
+
+    private Border CreateDivider()
+    {
+        var vertical = IsVertical;
+        return new Border
+        {
+            Width = vertical ? _app.Settings.IconSize * 0.73 : 1,
+            Height = vertical ? 1 : _app.Settings.IconSize * 0.73,
+            Background = new SolidColorBrush(Color.FromArgb(105, 255, 255, 255)),
+            Margin = vertical ? new Thickness(0, 9, 0, 9) : new Thickness(9, 0, 9, 0),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+    }
+
+    private void OnIconMouseMove(object sender, MouseEventArgs e)
+    {
+        var pointer = e.GetPosition(_icons);
+        var radius = _app.Settings.IconSize * 2.5;
+        foreach (var view in _iconViews)
+        {
+            var center = view.TranslatePoint(new Point(view.ActualWidth / 2, view.ActualHeight / 2), _icons);
+            var distance = IsVertical ? Math.Abs(pointer.Y - center.Y) : Math.Abs(pointer.X - center.X);
+            var influence = Math.Max(0, 1 - distance / radius);
+            Animate(view, 1 + 0.43 * influence * influence);
+        }
+    }
+
+    private void ResetMagnification()
+    {
+        foreach (var view in _iconViews) Animate(view, 1);
     }
 
     private static void Animate(FrameworkElement element, double scale)
     {
         var transform = (ScaleTransform)element.RenderTransform;
-        var animation = new DoubleAnimation(scale, TimeSpan.FromMilliseconds(130))
+        var animation = new DoubleAnimation(scale, TimeSpan.FromMilliseconds(120))
         {
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
         };
@@ -172,35 +245,21 @@ internal sealed class DockWindow : Window
         transform.BeginAnimation(ScaleTransform.ScaleYProperty, animation);
     }
 
-    private static ImageSource? LoadIcon(string? path)
-    {
-        if (path == null || !File.Exists(path)) return null;
-        try
-        {
-            using var icon = System.Drawing.Icon.ExtractAssociatedIcon(path);
-            if (icon == null) return null;
-            var source = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
-                icon.Handle, Int32Rect.Empty, BitmapSizeOptions.FromWidthAndHeight(64, 64));
-            source.Freeze();
-            return source;
-        }
-        catch (Exception) { return null; }
-    }
-
     private ContextMenu CreateItemMenu(PinnedApp? pin, RunningWindow? running, string? target)
     {
         var menu = new ContextMenu();
         if (target != null) Add(menu, "Open", () => _app.Launch(target));
         if (running != null) Add(menu, "Bring to front", () => Windows.Activate(running.Handle));
-        if (pin != null) Add(menu, "Remove from dock", () => _app.Unpin(pin));
-        else if (running?.ExecutablePath != null) Add(menu, "Keep in dock", () => _app.Pin(running.ExecutablePath, running.ProcessName));
-        if (target != null && File.Exists(target))
+        if (pin != null) Add(menu, "Remove from Dock", () => _app.Unpin(pin));
+        else if (running?.ExecutablePath != null) Add(menu, "Keep in Dock", () => _app.Pin(running.ExecutablePath, running.ProcessName));
+        var location = pin?.RealPath ?? target;
+        if (location != null && File.Exists(location))
         {
             Add(menu, "Show in File Explorer", () =>
             {
                 var info = new ProcessStartInfo("explorer.exe") { UseShellExecute = true };
                 info.ArgumentList.Add("/select,");
-                info.ArgumentList.Add(target);
+                info.ArgumentList.Add(location);
                 Process.Start(info);
             });
         }
@@ -211,6 +270,7 @@ internal sealed class DockWindow : Window
     {
         var menu = new ContextMenu();
         Add(menu, "Add app…", _app.AddAppFromDialog);
+        Add(menu, "Launchpad", _app.ShowSearch);
         Add(menu, "Settings…", _app.ShowSettings);
         Add(menu, "Exit", _app.Shutdown);
         return menu;
@@ -225,29 +285,40 @@ internal sealed class DockWindow : Window
 
     private void OnDragOver(object sender, DragEventArgs e)
     {
-        e.Effects = HasAppFile(e.Data) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Effects = HasTarget(e.Data) ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
     private void OnDrop(object sender, DragEventArgs e)
     {
         if (e.Data.GetData(DataFormats.FileDrop) is not string[] paths) return;
-        foreach (var path in paths.Where(IsAppFile)) _app.Pin(path);
+        foreach (var path in paths.Where(IsTarget)) _app.Pin(path);
         e.Handled = true;
     }
 
-    private static bool HasAppFile(IDataObject data) =>
-        data.GetData(DataFormats.FileDrop) is string[] paths && paths.Any(IsAppFile);
+    private static bool HasTarget(IDataObject data) =>
+        data.GetData(DataFormats.FileDrop) is string[] paths && paths.Any(IsTarget);
 
-    private static bool IsAppFile(string path) => File.Exists(path) &&
-        (string.Equals(Path.GetExtension(path), ".exe", StringComparison.OrdinalIgnoreCase) ||
-         string.Equals(Path.GetExtension(path), ".lnk", StringComparison.OrdinalIgnoreCase));
+    private static bool IsTarget(string path) => File.Exists(path) || Directory.Exists(path);
 
     private void Reposition()
     {
         if (!IsLoaded) return;
         var work = SystemParameters.WorkArea;
-        Left = work.Left + (work.Width - ActualWidth) / 2;
-        Top = work.Bottom - ActualHeight - 5;
+        switch (_app.Settings.DockPosition)
+        {
+            case "left":
+                Left = _concealed ? work.Left - ActualWidth + 9 : work.Left + 4;
+                Top = work.Top + (work.Height - ActualHeight) / 2;
+                break;
+            case "right":
+                Left = _concealed ? work.Right - 9 : work.Right - ActualWidth - 4;
+                Top = work.Top + (work.Height - ActualHeight) / 2;
+                break;
+            default:
+                Left = work.Left + (work.Width - ActualWidth) / 2;
+                Top = _concealed ? work.Bottom - 9 : work.Bottom - ActualHeight - 4;
+                break;
+        }
     }
 }

@@ -9,4 +9,8 @@
     <AssemblyName>MacOSDock</AssemblyName>
     <RootNamespace>MacOSDock</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Shaders/LiquidGlass.ps" />
+    <None Include="Shaders/LiquidGlass.hlsl" />
+  </ItemGroup>
 </Project>

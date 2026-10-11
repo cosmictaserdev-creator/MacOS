@@ -13,6 +13,7 @@ internal sealed class DockApp : Application
     private DockWindow? _dock;
     private MenuBarWindow? _bar;
     private SearchWindow? _search;
+    private ControlCenterWindow? _controlCenter;
     private readonly DispatcherTimer _refresh = new() { Interval = TimeSpan.FromSeconds(4) };
 
     public AppSettings Settings { get; private set; } = AppSettings.Load();
@@ -82,6 +83,7 @@ internal sealed class DockApp : Application
 
     public void ApplyVisibility()
     {
+        MacOSDock.Windows.SetTaskbarHidden(Settings.HideWindowsTaskbar);
         if (_dock != null)
         {
             if (Settings.ShowDock) _dock.Show(); else _dock.Hide();
@@ -98,6 +100,18 @@ internal sealed class DockApp : Application
         var displayName = name ?? Path.GetFileNameWithoutExtension(target);
         Settings.Pinned.Add(new PinnedApp { Name = displayName, Target = target, Glyph = "◈" });
         SaveAndRefresh();
+    }
+
+    public int ImportMyDockFinder(string folder)
+    {
+        var count = Settings.ImportMyDockFinder(folder);
+        if (count > 0)
+        {
+            _bar?.Close();
+            _bar = new MenuBarWindow(this);
+            SaveAndRefresh();
+        }
+        return count;
     }
 
     public void Unpin(PinnedApp app)
@@ -121,6 +135,20 @@ internal sealed class DockApp : Application
     {
         try
         {
+            if (target.StartsWith("shell:", StringComparison.OrdinalIgnoreCase))
+            {
+                var shell = new ProcessStartInfo("explorer.exe") { UseShellExecute = true };
+                shell.ArgumentList.Add(target);
+                Process.Start(shell);
+                return;
+            }
+            if (target.Contains('!') && !File.Exists(target))
+            {
+                var shell = new ProcessStartInfo("explorer.exe") { UseShellExecute = true };
+                shell.ArgumentList.Add("shell:AppsFolder\\" + target);
+                Process.Start(shell);
+                return;
+            }
             var info = new ProcessStartInfo(target) { UseShellExecute = true };
             if (File.Exists(target)) info.WorkingDirectory = Path.GetDirectoryName(target)!;
             Process.Start(info);
@@ -153,9 +181,22 @@ internal sealed class DockApp : Application
         _search.FocusSearch();
     }
 
+    public void ShowControlCenter()
+    {
+        if (_controlCenter != null && _controlCenter.IsVisible)
+        {
+            _controlCenter.Close();
+            return;
+        }
+        _controlCenter = new ControlCenterWindow(this);
+        _controlCenter.Show();
+        _controlCenter.Activate();
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
         _refresh.Stop();
+        MacOSDock.Windows.SetTaskbarHidden(false);
         if (_tray != null) { _tray.Visible = false; _tray.Dispose(); }
         _singleInstance?.Dispose();
         base.OnExit(e);

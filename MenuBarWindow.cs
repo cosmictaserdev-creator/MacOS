@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using Forms = System.Windows.Forms;
 
@@ -27,15 +28,29 @@ internal sealed class MenuBarWindow : Window
         Topmost = true;
         Background = Brushes.Transparent;
         Width = SystemParameters.PrimaryScreenWidth;
-        Height = 34;
+        Height = 29;
         Left = 0;
         Top = 0;
 
-        var bar = new DockPanel { LastChildFill = false, Margin = new Thickness(12, 0, 12, 0) };
+        var bar = new DockPanel { LastChildFill = false, Margin = new Thickness(17, 0, 18, 0) };
+        bar.Effect = new DropShadowEffect { BlurRadius = 5, ShadowDepth = 1, Opacity = 0.8, Color = Colors.Black };
         var left = new StackPanel { Orientation = Orientation.Horizontal };
-        var mark = MenuButton("◆", CreateMainMenu());
-        mark.FontSize = 16;
-        left.Children.Add(mark);
+        var logoPath = app.Settings.SourceFolder == null ? null :
+            System.IO.Path.Combine(app.Settings.SourceFolder, "themes", "mac os", "logo", "logo.png");
+        var logo = IconService.Load(logoPath);
+        if (logo == null)
+        {
+            var mark = MenuButton("◆", CreateMainMenu());
+            mark.FontSize = 16;
+            left.Children.Add(mark);
+        }
+        else
+        {
+            var mark = new Image { Source = logo, Width = 16, Height = 18, Margin = new Thickness(0, 0, 18, 0), Cursor = Cursors.Hand };
+            var menu = CreateMainMenu();
+            mark.MouseLeftButtonDown += (_, _) => { menu.PlacementTarget = mark; menu.IsOpen = true; };
+            left.Children.Add(mark);
+        }
         _active.Margin = new Thickness(12, 0, 17, 0);
         left.Children.Add(_active);
         left.Children.Add(MenuButton("File", CreateFileMenu()));
@@ -48,14 +63,14 @@ internal sealed class MenuBarWindow : Window
         right.Children.Add(StatusButton(_network, () => _app.Launch("ms-settings:network")));
         right.Children.Add(StatusButton(Ui.Text("◖))", 12), () => _app.Launch("sndvol.exe")));
         right.Children.Add(StatusButton(_battery, () => _app.Launch("ms-settings:powersleep")));
+        right.Children.Add(StatusButton(Ui.Text("⌕", 18), _app.ShowSearch));
+        right.Children.Add(StatusButton(Ui.Text("☷", 16), _app.ShowControlCenter));
         _clock.Margin = new Thickness(10, 0, 0, 0);
         right.Children.Add(_clock);
         DockPanel.SetDock(right, Dock.Right);
         bar.Children.Add(right);
 
-        var glass = Ui.Card(bar, 0);
-        glass.BorderThickness = new Thickness(0, 0, 0, 1);
-        Content = glass;
+        Content = bar;
         UpdateStatus();
         _timer.Tick += (_, _) => UpdateStatus();
         _timer.Start();
